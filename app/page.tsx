@@ -1,6 +1,13 @@
 import { AuthForm } from "@/components/auth-form"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
 
-export default function Home() {
+export default async function Home() {
+  const supabase = await createSupabaseServerClient() /*needs async and await since next.js 15*/
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  console.log("Server user:", user?.email)
+
   return (
     <main className="min-h-screen">
       {/* Hero Section */}
