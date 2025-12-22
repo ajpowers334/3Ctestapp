@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,6 +12,7 @@ import { supabase } from "@/lib/supabaseClient"
 import { createProfile } from "@/app/actions/profile"
 
 export function AuthForm() {
+  const router = useRouter()
   const [isSignUp, setIsSignUp] = useState(false)
   const [formData, setFormData] = useState({
     email: "",
@@ -84,7 +86,7 @@ export function AuthForm() {
         alert(error.message)
       } else {
         console.log("User signed in:", data.session)
-        alert("You are now signed in!")
+        router.refresh()
       }
     }
     
