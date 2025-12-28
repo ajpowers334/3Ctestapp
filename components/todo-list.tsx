@@ -2,12 +2,13 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Plus, Trash2, Sparkles } from "lucide-react"
+import { createTask, updateTaskCompletion, deleteTask, getTasks } from "@/app/actions/tasks"
 
 interface Todo {
   id: string
@@ -16,49 +17,126 @@ interface Todo {
   completedAt?: number
 }
 
-export function TodoList() {
+interface TodoListProps {
+  userId: string
+}
+
+export function TodoList({ userId }: TodoListProps) {
   const [todos, setTodos] = useState<Todo[]>([])
   const [inputValue, setInputValue] = useState("")
   const [completingId, setCompletingId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  const addTodo = () => {
+  // Fetch tasks on mount
+  useEffect(() => {
+    const fetchTasks = async () => {
+      const result = await getTasks(userId)
+      if (result.success && result.data) {
+        setTodos(
+          result.data.map((task: any) => ({
+            id: task.id,
+            text: task.title,
+            completed: task.completed,
+          }))
+        )
+      }
+      setIsLoading(false)
+    }
+    fetchTasks()
+  }, [userId])
+
+  const addTodo = async () => {
     if (inputValue.trim()) {
-      const newTodo: Todo = {
-        id: Date.now().toString(),
-        text: inputValue.trim(),
+      const title = inputValue.trim()
+      setInputValue("")
+      
+      // Optimistically add to UI
+      const tempId = `temp-${Date.now()}`
+      const optimisticTodo: Todo = {
+        id: tempId,
+        text: title,
         completed: false,
       }
-      setTodos([newTodo, ...todos])
-      setInputValue("")
+      setTodos([optimisticTodo, ...todos])
+
+      // Save to database
+      const result = await createTask(userId, title)
+      
+      if (result.success && result.data) {
+        // Replace optimistic update with real data
+        setTodos((prev) =>
+          prev.map((todo) =>
+            todo.id === tempId
+              ? {
+                  id: result.data.id,
+                  text: result.data.title,
+                  completed: result.data.completed,
+                }
+              : todo
+          )
+        )
+      } else {
+        // Remove optimistic update on error
+        setTodos((prev) => prev.filter((todo) => todo.id !== tempId))
+        alert("Error creating task. Please try again.")
+        setInputValue(title) // Restore input value
+      }
     }
   }
 
-  const toggleTodo = (id: string) => {
+  const toggleTodo = async (id: string) => {
     const todo = todos.find((t) => t.id === id)
     if (!todo || todo.completed) return
 
     // Trigger completion animation
     setCompletingId(id)
 
-    // Wait for animation, then update state
-    setTimeout(() => {
-      setTodos(
-        todos.map((todo) =>
-          todo.id === id
-            ? {
-                ...todo,
-                completed: true,
-                completedAt: Date.now(),
-              }
-            : todo,
-        ),
+    // Optimistically update UI
+    setTodos((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              completed: true,
+              completedAt: Date.now(),
+            }
+          : t
       )
+    )
+
+    // Wait for animation, then update database
+    setTimeout(async () => {
+      const result = await updateTaskCompletion(id, true)
+      
+      if (!result.success) {
+        // Revert on error
+        setTodos((prev) =>
+          prev.map((t) =>
+            t.id === id ? { ...t, completed: false } : t
+          )
+        )
+        alert("Error updating task. Please try again.")
+      }
+      
       setCompletingId(null)
     }, 600)
   }
 
-  const deleteTodo = (id: string) => {
+  const deleteTodo = async (id: string) => {
+    // Optimistically remove from UI
+    const todoToDelete = todos.find((t) => t.id === id)
     setTodos(todos.filter((todo) => todo.id !== id))
+
+    // Delete from database
+    const result = await deleteTask(id)
+    
+    if (!result.success) {
+      // Restore on error
+      if (todoToDelete) {
+        setTodos((prev) => [...prev, todoToDelete])
+      }
+      alert("Error deleting task. Please try again.")
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -153,8 +231,16 @@ export function TodoList() {
           ))}
         </div>
 
+        {/* Loading State */}
+        {isLoading && (
+          <div className="text-center py-12 text-muted-foreground animate-fade-in">
+            <div className="mb-2 text-4xl">⏳</div>
+            <p className="text-sm">Loading tasks...</p>
+          </div>
+        )}
+
         {/* Empty State */}
-        {todos.length === 0 && (
+        {!isLoading && todos.length === 0 && (
           <div className="text-center py-12 text-muted-foreground animate-fade-in">
             <div className="mb-2 text-4xl">📝</div>
             <p className="text-sm">No tasks yet. Add one above to get started!</p>

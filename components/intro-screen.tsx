@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 
 interface IntroScreenProps {
-  onComplete: () => void
+  onComplete: (selectedValue: string) => void
 }
 
 const options = [
@@ -25,7 +25,7 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
       setIsVisible(false)
       // Wait for fade out animation to complete
       setTimeout(() => {
-        onComplete()
+        onComplete(value)
       }, 500)
     }, 300)
   }

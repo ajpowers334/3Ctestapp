@@ -1,20 +1,10 @@
 "use client"
 
-import { useState } from "react"
-import { IntroScreen } from "@/components/intro-screen"
 import { AuthForm } from "@/components/auth-form"
 
 export function HomePageContent() {
-  const [showIntro, setShowIntro] = useState(true)
-
-  const handleIntroComplete = () => {
-    setShowIntro(false)
-  }
-
   return (
-    <>
-      {showIntro && <IntroScreen onComplete={handleIntroComplete} />}
-      <main className="min-h-screen">
+    <main className="min-h-screen">
         {/* Hero Section */}
         <section className="relative overflow-hidden bg-background">
           <div className="container mx-auto px-4 py-12 md:py-24">
@@ -140,6 +130,5 @@ export function HomePageContent() {
         </section>
         {/* </CHANGE> */}
       </main>
-    </>
   )
 }

@@ -5,33 +5,52 @@ import { createClient } from "@supabase/supabase-js"
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!
 
-export async function createProfile(userId: string, email: string) {
+export async function getTasks(userUuid: string) {
   try {
-    // Create a Supabase client for server-side operations
-    // No session dependency - we're using the provided userId and email directly
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-    // Insert a row into the profiles table
     const { data, error } = await supabase
-      .from("profiles")
+      .from("tasks")
+      .select("id, title, completed")
+      .eq("uuid", userUuid)
+      .order("created_at", { ascending: false })
+    
+    if (error) {
+      return {
+        success: false,
+        error: error.message,
+        data: [],
+      }
+    }
+    
+    return {
+      success: true,
+      data: data || [],
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+      data: [],
+    }
+  }
+}
+
+export async function createTask(userUuid: string, title: string) {
+  try {
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+    const { data, error } = await supabase
+      .from("tasks")
       .insert({
-        id: userId,
-        email: email,
-        created_at: new Date().toISOString(),
+        uuid: userUuid,
+        title: title,
+        completed: false,
       })
       .select()
       .single()
     
     if (error) {
-      // If the profile already exists, that's okay (idempotent)
-      if (error.code === "23505") {
-        // Unique constraint violation - profile already exists
-        return {
-          success: true,
-          message: "Profile already exists",
-        }
-      }
-      
       return {
         success: false,
         error: error.message,
@@ -50,16 +69,14 @@ export async function createProfile(userId: string, email: string) {
   }
 }
 
-export async function updateUserType(userId: string, type: string) {
+export async function updateTaskCompletion(taskId: string, completed: boolean) {
   try {
-    // Create a Supabase client for server-side operations
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-    // Update the type column for the specific user
     const { data, error } = await supabase
-      .from("profiles")
-      .update({ type: type })
-      .eq("id", userId)
+      .from("tasks")
+      .update({ completed: completed })
+      .eq("id", taskId)
       .select()
       .single()
     
@@ -82,33 +99,29 @@ export async function updateUserType(userId: string, type: string) {
   }
 }
 
-export async function getUserType(userId: string) {
+export async function deleteTask(taskId: string) {
   try {
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("type")
-      .eq("id", userId)
-      .single()
+    const { error } = await supabase
+      .from("tasks")
+      .delete()
+      .eq("id", taskId)
     
     if (error) {
       return {
         success: false,
         error: error.message,
-        type: null,
       }
     }
     
     return {
       success: true,
-      type: data?.type || null,
     }
   } catch (error) {
     return {
       success: false,
       error: error instanceof Error ? error.message : "An unknown error occurred",
-      type: null,
     }
   }
 }

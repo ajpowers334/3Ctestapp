@@ -6,11 +6,12 @@ import type { User } from "@supabase/supabase-js"
 
 interface HomePageWrapperProps {
   user: User | null
+  hasType: boolean
 }
 
-export function HomePageWrapper({ user }: HomePageWrapperProps) {
+export function HomePageWrapper({ user, hasType }: HomePageWrapperProps) {
   if (user) {
-    return <AuthenticatedView />
+    return <AuthenticatedView hasType={hasType} userId={user.id} />
   }
 
   return <HomePageContent />
