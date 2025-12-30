@@ -1,15 +1,39 @@
 "use server"
 
-import { createClient } from "@supabase/supabase-js"
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
 
 const supabaseUrl = process.env.SUPABASE_URL!
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!
+
+// Helper function to create an authenticated Supabase client for server actions
+// This reads cookies so RLS policies can access auth.uid()
+async function createAuthenticatedClient() {
+  const cookieStore = await cookies()
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll()
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options)
+          })
+        } catch (error) {
+          // The `setAll` method was called from a Server Component.
+          // This can be ignored in server actions where cookies can be set.
+        }
+      },
+    },
+  })
+}
 
 export async function createProfile(userId: string, email: string) {
   try {
     // Create a Supabase client for server-side operations
     // No session dependency - we're using the provided userId and email directly
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
 
     // Insert a row into the profiles table
     const { data, error } = await supabase
@@ -53,7 +77,7 @@ export async function createProfile(userId: string, email: string) {
 export async function updateUserType(userId: string, type: string) {
   try {
     // Create a Supabase client for server-side operations
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
 
     // Update the type column for the specific user
     const { data, error } = await supabase
@@ -84,7 +108,7 @@ export async function updateUserType(userId: string, type: string) {
 
 export async function getUserType(userId: string) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
 
     const { data, error } = await supabase
       .from("profiles")

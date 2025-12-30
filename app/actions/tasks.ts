@@ -1,18 +1,42 @@
 "use server"
 
-import { createClient } from "@supabase/supabase-js"
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
 
 const supabaseUrl = process.env.SUPABASE_URL!
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!
 
+// Helper function to create an authenticated Supabase client for server actions
+// This reads cookies so RLS policies can access auth.uid()
+async function createAuthenticatedClient() {
+  const cookieStore = await cookies()
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll()
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options)
+          })
+        } catch (error) {
+          // The `setAll` method was called from a Server Component.
+          // This can be ignored in server actions where cookies can be set.
+        }
+      },
+    },
+  })
+}
+
 export async function getTasks(userUuid: string) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
 
     const { data, error } = await supabase
       .from("tasks")
       .select("id, title, completed")
-      .eq("uuid", userUuid)
+      .eq("user_id", userUuid)
       .order("created_at", { ascending: false })
     
     if (error) {
@@ -38,12 +62,12 @@ export async function getTasks(userUuid: string) {
 
 export async function createTask(userUuid: string, title: string) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
 
     const { data, error } = await supabase
       .from("tasks")
       .insert({
-        uuid: userUuid,
+        user_id: userUuid,
         title: title,
         completed: false,
       })
@@ -71,7 +95,7 @@ export async function createTask(userUuid: string, title: string) {
 
 export async function updateTaskCompletion(taskId: string, completed: boolean) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
 
     const { data, error } = await supabase
       .from("tasks")
@@ -101,7 +125,7 @@ export async function updateTaskCompletion(taskId: string, completed: boolean) {
 
 export async function deleteTask(taskId: string) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
 
     const { error } = await supabase
       .from("tasks")

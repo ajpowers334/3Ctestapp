@@ -1,9 +1,33 @@
 "use server"
 
-import { createClient } from "@supabase/supabase-js"
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
 
 const supabaseUrl = process.env.SUPABASE_URL!
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!
+
+// Helper function to create an authenticated Supabase client for server actions
+// This reads cookies so RLS policies can access auth.uid()
+async function createAuthenticatedClient() {
+  const cookieStore = await cookies()
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll()
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options)
+          })
+        } catch (error) {
+          // The `setAll` method was called from a Server Component.
+          // This can be ignored in server actions where cookies can be set.
+        }
+      },
+    },
+  })
+}
 
 // Helper function to check if we're past 3am today
 function isPastResetTime(): boolean {
@@ -25,7 +49,7 @@ function getTodayDateString(): string {
 
 export async function getGoals(userUuid: string) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
     const today = getTodayDateString()
 
     const { data, error } = await supabase
@@ -92,7 +116,7 @@ export async function createGoal(
   label: string
 ) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
 
     const { data, error } = await supabase
       .from("goals")
@@ -130,7 +154,7 @@ export async function createGoal(
 
 export async function updateGoalCompletion(goalId: string, completed: boolean) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
     const today = getTodayDateString()
 
     const { data, error } = await supabase
@@ -166,7 +190,7 @@ export async function updateGoalCompletion(goalId: string, completed: boolean) {
 
 export async function updateGoalText(goalId: string, title: string) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
 
     const { data, error } = await supabase
       .from("goals")
@@ -196,7 +220,7 @@ export async function updateGoalText(goalId: string, title: string) {
 
 export async function updateGoalSkip(goalId: string, skipped: boolean, skipReason: string) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = await createAuthenticatedClient()
     const today = getTodayDateString()
 
     const { data, error } = await supabase
