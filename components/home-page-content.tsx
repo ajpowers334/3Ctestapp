@@ -19,6 +19,10 @@ export function HomePageContent() {
                     Carolina Canyon Co.
                   </h1>
                   <p className="text-lg text-muted-foreground text-pretty leading-relaxed md:text-xl">
+                    3C's <span className="text-[#185859] font-semibold">Daily Goals Tracker</span> and{" "}
+                    <span className="text-[#185859] font-semibold">To-Do List</span>
+                  </p>
+                  <p className="text-lg text-muted-foreground text-pretty leading-relaxed md:text-xl">
                     Providing transformative youth programs, workforce development, and financial literacy initiatives to
                     underserved communities in Washington, D.C. We ignite potential, foster lifelong learning, and build
                     pathways to economic mobility and generational success.
