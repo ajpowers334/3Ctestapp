@@ -29,22 +29,15 @@ async function createAuthenticatedClient() {
   })
 }
 
-// Helper function to check if we're past 3am today
-function isPastResetTime(): boolean {
-  const now = new Date()
-  const resetTime = new Date()
-  resetTime.setHours(3, 0, 0, 0)
-  return now >= resetTime
-}
-
 // Helper function to get today's date string (YYYY-MM-DD)
+// Uses midnight (12am) as the reset time
 function getTodayDateString(): string {
   const today = new Date()
-  // If it's before 3am, use yesterday's date
-  if (!isPastResetTime()) {
-    today.setDate(today.getDate() - 1)
-  }
-  return today.toISOString().split('T')[0]
+  // Get local date string (YYYY-MM-DD) - resets at midnight
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export async function getGoals(userUuid: string) {
@@ -66,7 +59,7 @@ export async function getGoals(userUuid: string) {
       }
     }
 
-    // Reset goals that were completed or skipped on a different day (3am reset logic)
+    // Reset goals that were completed or skipped on a different day (midnight reset logic)
     const goalsToReset: string[] = []
     const updatedGoals = (data || []).map((goal: any) => {
       // If goal was completed or skipped but not today, reset it
@@ -152,16 +145,61 @@ export async function createGoal(
   }
 }
 
+export async function getGoalById(goalId: string) {
+  try {
+    const supabase = await createAuthenticatedClient()
+
+    const { data, error } = await supabase
+      .from("goals")
+      .select("id, completed, completed_date")
+      .eq("id", goalId)
+      .single()
+    
+    if (error) {
+      return {
+        success: false,
+        error: error.message,
+        data: null,
+      }
+    }
+    
+    return {
+      success: true,
+      data,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+      data: null,
+    }
+  }
+}
+
 export async function updateGoalCompletion(goalId: string, completed: boolean) {
   try {
     const supabase = await createAuthenticatedClient()
     const today = getTodayDateString()
 
+    // First, get the current goal state to check if it was completed today
+    const { data: currentGoal } = await supabase
+      .from("goals")
+      .select("completed_date")
+      .eq("id", goalId)
+      .single()
+
+    // If uncompleting a goal that was completed today, keep completed_date as today
+    // This prevents awarding credits again if user recompletes the goal
+    const wasCompletedToday = currentGoal?.completed_date === today
+    const newCompletedDate = completed 
+      ? today 
+      : (wasCompletedToday ? today : null) // Keep today's date if it was completed today
+
     const { data, error } = await supabase
       .from("goals")
       .update({ 
         completed: completed,
-        completed_date: completed ? today : null,
+        completed_date: newCompletedDate,
         skipped: false,
         skip_reason: "",
       })
@@ -179,6 +217,7 @@ export async function updateGoalCompletion(goalId: string, completed: boolean) {
     return {
       success: true,
       data,
+      wasCompletedToday, // Return this so we know if credits were already awarded
     }
   } catch (error) {
     return {

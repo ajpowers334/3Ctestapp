@@ -7,8 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Trash2, Sparkles } from "lucide-react"
-import { createTask, updateTaskCompletion, deleteTask, getTasks } from "@/app/actions/tasks"
+import { Plus, Sparkles } from "lucide-react"
+import { createTask, updateTaskCompletion, redeemTask, getTasks } from "@/app/actions/tasks"
 
 interface Todo {
   id: string
@@ -19,9 +19,10 @@ interface Todo {
 
 interface TodoListProps {
   userId: string
+  onCreditsUpdate?: (credits: number) => void
 }
 
-export function TodoList({ userId }: TodoListProps) {
+export function TodoList({ userId, onCreditsUpdate }: TodoListProps) {
   const [todos, setTodos] = useState<Todo[]>([])
   const [inputValue, setInputValue] = useState("")
   const [completingId, setCompletingId] = useState<string | null>(null)
@@ -122,20 +123,25 @@ export function TodoList({ userId }: TodoListProps) {
     }, 600)
   }
 
-  const deleteTodo = async (id: string) => {
+  const redeemTodo = async (id: string) => {
     // Optimistically remove from UI
-    const todoToDelete = todos.find((t) => t.id === id)
+    const todoToRedeem = todos.find((t) => t.id === id)
     setTodos(todos.filter((todo) => todo.id !== id))
 
-    // Delete from database
-    const result = await deleteTask(id)
+    // Redeem task (add credits and delete from database)
+    const result = await redeemTask(id)
     
-    if (!result.success) {
-      // Restore on error
-      if (todoToDelete) {
-        setTodos((prev) => [...prev, todoToDelete])
+    if (result.success) {
+      // Update credits in parent component
+      if (onCreditsUpdate && result.credits !== undefined) {
+        onCreditsUpdate(result.credits)
       }
-      alert("Error deleting task. Please try again.")
+    } else {
+      // Restore on error
+      if (todoToRedeem) {
+        setTodos((prev) => [...prev, todoToRedeem])
+      }
+      alert("Error redeeming task. Please try again.")
     }
   }
 
@@ -218,14 +224,12 @@ export function TodoList({ userId }: TodoListProps) {
                 </div>
               )}
 
-              {/* Delete Button */}
+              {/* Redeem Button */}
               <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => deleteTodo(todo.id)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
+                onClick={() => redeemTodo(todo.id)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity bg-[#185859] hover:bg-[#185859]/90 text-white text-xs font-medium px-3 py-1.5 h-auto"
               >
-                <Trash2 className="size-4" />
+                REDEEM
               </Button>
             </div>
           ))}

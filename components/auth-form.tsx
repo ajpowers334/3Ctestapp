@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabaseClient"
-import { createProfile } from "@/app/actions/profile"
+import { createProfile, ensureProfileExists } from "@/app/actions/profile"
 
 export function AuthForm() {
   const router = useRouter()
@@ -86,6 +86,15 @@ export function AuthForm() {
         alert(error.message)
       } else {
         console.log("User signed in:", data.session)
+        
+        // Ensure profile exists after successful login
+        // This handles cases where profile creation failed during signup
+        const profileResult = await ensureProfileExists()
+        if (!profileResult.success) {
+          console.error("Failed to ensure profile exists after login:", profileResult.error)
+          // Don't block login, but log the error
+        }
+        
         router.refresh()
       }
     }

@@ -2,6 +2,7 @@
 
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { addCredits, getCredits } from "./credits"
 
 const supabaseUrl = process.env.SUPABASE_URL!
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!
@@ -141,6 +142,79 @@ export async function deleteTask(taskId: string) {
     
     return {
       success: true,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
+  }
+}
+
+export async function redeemTask(taskId: string) {
+  try {
+    const supabase = await createAuthenticatedClient()
+
+    // First, fetch the task to get its value and user_id
+    const { data: task, error: fetchError } = await supabase
+      .from("tasks")
+      .select("id, value, user_id")
+      .eq("id", taskId)
+      .single()
+    
+    if (fetchError) {
+      return {
+        success: false,
+        error: fetchError.message,
+      }
+    }
+
+    if (!task) {
+      return {
+        success: false,
+        error: "Task not found",
+      }
+    }
+
+    const taskValue = task.value || 0
+    const userId = task.user_id
+
+    // Add the task value to user's credits
+    let updatedCredits: number | undefined
+    if (taskValue > 0) {
+      const creditsResult = await addCredits(userId, taskValue)
+      if (!creditsResult.success) {
+        return {
+          success: false,
+          error: creditsResult.error || "Failed to add credits",
+        }
+      }
+      updatedCredits = creditsResult.credits
+    } else {
+      // If task value is 0, still fetch current credits for consistency
+      const creditsResult = await getCredits(userId)
+      if (creditsResult.success) {
+        updatedCredits = creditsResult.credits
+      }
+    }
+
+    // Delete the task
+    const { error: deleteError } = await supabase
+      .from("tasks")
+      .delete()
+      .eq("id", taskId)
+    
+    if (deleteError) {
+      return {
+        success: false,
+        error: deleteError.message,
+      }
+    }
+    
+    return {
+      success: true,
+      creditsAdded: taskValue,
+      credits: updatedCredits,
     }
   } catch (error) {
     return {

@@ -136,3 +136,83 @@ export async function getUserType(userId: string) {
     }
   }
 }
+
+// Ensure profile exists for the currently authenticated user
+// This function gets the user from the session and creates a profile if it doesn't exist
+export async function ensureProfileExists() {
+  try {
+    const supabase = await createAuthenticatedClient()
+    
+    // Get the authenticated user from the session
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return {
+        success: false,
+        error: userError?.message || "No authenticated user found",
+      }
+    }
+    
+    // Check if profile already exists
+    const { data: existingProfile, error: fetchError } = await supabase
+      .from("profiles")
+      .select("id, email")
+      .eq("id", user.id)
+      .single()
+    
+    // If profile exists, return success
+    if (existingProfile && !fetchError) {
+      return {
+        success: true,
+        message: "Profile already exists",
+        data: existingProfile,
+      }
+    }
+    
+    // Profile doesn't exist, create it
+    // Use the email from the authenticated user
+    const userEmail = user.email
+    if (!userEmail) {
+      return {
+        success: false,
+        error: "User email not found",
+      }
+    }
+    
+    const { data, error } = await supabase
+      .from("profiles")
+      .insert({
+        id: user.id,
+        email: userEmail,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    
+    if (error) {
+      // If the profile already exists (race condition), that's okay
+      if (error.code === "23505") {
+        return {
+          success: true,
+          message: "Profile already exists",
+        }
+      }
+      
+      return {
+        success: false,
+        error: error.message,
+      }
+    }
+    
+    return {
+      success: true,
+      data,
+      message: "Profile created successfully",
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
+  }
+}

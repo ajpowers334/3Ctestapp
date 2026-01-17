@@ -3,12 +3,15 @@
 import { useState, useEffect } from "react"
 import { TodoList } from "@/components/todo-list"
 import { DailyGoals } from "@/components/daily-goals"
+import { CreditsTracker } from "@/components/credits-tracker"
 import { IntroScreen } from "@/components/intro-screen"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabaseClient"
 import { updateUserType, getUserType } from "@/app/actions/profile"
-import { LogOut } from "lucide-react"
+import { getCredits } from "@/app/actions/credits"
+import { LogOut, LayoutDashboard, Store } from "lucide-react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 
 interface AuthenticatedViewProps {
   hasType: boolean
@@ -19,18 +22,24 @@ export function AuthenticatedView({ hasType, userId }: AuthenticatedViewProps) {
   const router = useRouter()
   const [showIntro, setShowIntro] = useState(!hasType)
   const [userType, setUserType] = useState<string | null>(null)
+  const [credits, setCredits] = useState<number>(0)
 
-  // Fetch user type on mount
+  // Fetch user type and credits on mount
   useEffect(() => {
-    const fetchUserType = async () => {
-      const result = await getUserType(userId)
-      if (result.success && result.type) {
-        setUserType(result.type)
+    const fetchUserData = async () => {
+      if (hasType) {
+        const typeResult = await getUserType(userId)
+        if (typeResult.success && typeResult.type) {
+          setUserType(typeResult.type)
+        }
+      }
+      
+      const creditsResult = await getCredits(userId)
+      if (creditsResult.success) {
+        setCredits(creditsResult.credits)
       }
     }
-    if (hasType) {
-      fetchUserType()
-    }
+    fetchUserData()
   }, [userId, hasType])
 
   const handleIntroComplete = async (selectedValue: string) => {
@@ -63,9 +72,31 @@ export function AuthenticatedView({ hasType, userId }: AuthenticatedViewProps) {
     <>
       {showIntro && <IntroScreen onComplete={handleIntroComplete} />}
       <main className="min-h-screen bg-background">
-      {/* Sign Out Button */}
+      {/* Navigation Buttons */}
       <div className="container mx-auto px-4 py-4">
-        <div className="flex justify-end">
+        <div className="flex justify-between items-center">
+          <div className="flex gap-2">
+            <Button
+              asChild
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <Link href="/dashboard">
+                <LayoutDashboard className="h-4 w-4" />
+                Dashboard
+              </Link>
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <Link href="/store">
+                <Store className="h-4 w-4" />
+                Store
+              </Link>
+            </Button>
+          </div>
           <Button
             onClick={handleSignOut}
             variant="outline"
@@ -89,14 +120,19 @@ export function AuthenticatedView({ hasType, userId }: AuthenticatedViewProps) {
             </div>
           )}
           
+          {/* Credits Tracker */}
+          <div>
+            <CreditsTracker credits={credits} />
+          </div>
+          
           {/* Daily Goals Section */}
           <div>
-            <DailyGoals userId={userId} />
+            <DailyGoals userId={userId} onCreditsUpdate={setCredits} />
           </div>
 
           {/* Todo List Section */}
           <div>
-            <TodoList userId={userId} />
+            <TodoList userId={userId} onCreditsUpdate={setCredits} />
           </div>
         </div>
       </div>

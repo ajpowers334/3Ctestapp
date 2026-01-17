@@ -3,14 +3,16 @@
 import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Check, X, Pencil } from "lucide-react"
+import { Check, X, Pencil, Flame } from "lucide-react"
 import { 
   getGoals, 
   createGoal, 
-  updateGoalCompletion, 
+  updateGoalCompletion,
   updateGoalText, 
   updateGoalSkip 
 } from "@/app/actions/goals"
+import { addCredits } from "@/app/actions/credits"
+import { getStreak, updateStreak, awardStreakBonus } from "@/app/actions/streak"
 
 interface DailyGoal {
   id: string
@@ -20,10 +22,12 @@ interface DailyGoal {
   completed: boolean
   skipped: boolean
   skipReason: string
+  completedDate?: string | null
 }
 
 interface DailyGoalsProps {
   userId: string
+  onCreditsUpdate?: (credits: number) => void
 }
 
 const defaultGoals = [
@@ -44,9 +48,10 @@ const defaultGoals = [
   },
 ]
 
-export function DailyGoals({ userId }: DailyGoalsProps) {
+export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
   const [goals, setGoals] = useState<DailyGoal[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [streak, setStreak] = useState<number>(0)
 
   const [showCelebration, setShowCelebration] = useState(false)
   const [currentDay, setCurrentDay] = useState(1)
@@ -61,9 +66,16 @@ export function DailyGoals({ userId }: DailyGoalsProps) {
     setCurrentDay(today.getDate())
   }, [])
 
-  // Fetch goals on mount
+  // Fetch goals and streak on mount
   useEffect(() => {
-    const fetchGoals = async () => {
+    const fetchData = async () => {
+      // Fetch streak
+      const streakResult = await getStreak(userId)
+      if (streakResult.success) {
+        setStreak(streakResult.streak)
+      }
+
+      // Fetch goals
       const result = await getGoals(userId)
       if (result.success && result.data) {
         if (result.data.length === 0) {
@@ -85,28 +97,38 @@ export function DailyGoals({ userId }: DailyGoalsProps) {
                 completed: createResult.data.completed,
                 skipped: createResult.data.skipped,
                 skipReason: createResult.data.skip_reason || "",
+                completedDate: createResult.data.completed_date || null,
               })
             }
           }
           setGoals(createdGoals)
         } else {
           // Map database goals to component format
-          setGoals(
-            result.data.map((goal: any) => ({
-              id: goal.id,
-              type: goal.type,
-              label: goal.label,
-              text: goal.title,
-              completed: goal.completed,
-              skipped: goal.skipped,
-              skipReason: goal.skip_reason || "",
-            }))
-          )
+          const mappedGoals = result.data.map((goal: any) => ({
+            id: goal.id,
+            type: goal.type,
+            label: goal.label,
+            text: goal.title,
+            completed: goal.completed,
+            skipped: goal.skipped,
+            skipReason: goal.skip_reason || "",
+            completedDate: goal.completed_date || null,
+          }))
+          setGoals(mappedGoals)
+          
+          // Check if all goals are completed and update streak
+          const allCompleted = mappedGoals.every((g: DailyGoal) => g.completed && !g.skipped)
+          if (mappedGoals.length > 0) {
+            const streakUpdateResult = await updateStreak(userId, allCompleted)
+            if (streakUpdateResult.success) {
+              setStreak(streakUpdateResult.streak)
+            }
+          }
         }
       }
       setIsLoading(false)
     }
-    fetchGoals()
+    fetchData()
   }, [userId])
 
   const toggleGoal = async (id: string) => {
@@ -114,10 +136,26 @@ export function DailyGoals({ userId }: DailyGoalsProps) {
     if (!goal) return
 
     const newCompleted = !goal.completed
+    const wasCompleted = goal.completed
+
+    // Get today's date string (midnight reset)
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    const todayDateString = `${year}-${month}-${day}`
 
     // Optimistically update UI
     const updatedGoals = goals.map((g) =>
-      g.id === id ? { ...g, completed: newCompleted, skipped: false, skipReason: "" } : g,
+      g.id === id 
+        ? { 
+            ...g, 
+            completed: newCompleted, 
+            skipped: false, 
+            skipReason: "",
+            completedDate: newCompleted ? todayDateString : (g.completedDate === todayDateString ? todayDateString : null),
+          } 
+        : g,
     )
     setGoals(updatedGoals)
 
@@ -131,11 +169,45 @@ export function DailyGoals({ userId }: DailyGoalsProps) {
       return
     }
 
-    const allCompleted = updatedGoals.every((g) => g.completed || g.skipped)
+    // Add credits when a goal is completed (not when uncompleted)
+    // Only add credits if the goal wasn't already completed today (prevents double credits on recomplete)
+    // The updateGoalCompletion function now preserves completed_date when uncompleting if it was today
+    const creditsAlreadyAwarded = result.wasCompletedToday || false
+    if (newCompleted && !wasCompleted && !creditsAlreadyAwarded) {
+      const creditsResult = await addCredits(userId, 3)
+      if (creditsResult.success && onCreditsUpdate) {
+        onCreditsUpdate(creditsResult.credits)
+      }
+    }
+
+    // Check if all goals are completed (not skipped) and update streak
+    const allCompleted = updatedGoals.every((g) => g.completed && !g.skipped)
     const anyCompleted = updatedGoals.some((g) => g.completed)
-    if (allCompleted && anyCompleted) {
+    
+    if (allCompleted && updatedGoals.length > 0) {
+      // All goals completed - update streak
+      const streakResult = await updateStreak(userId, true)
+      if (streakResult.success) {
+        setStreak(streakResult.streak)
+        
+        // Award streak bonus credit if user is on a streak
+        // Check if streak is > 0 (either was already on streak or just started)
+        if (streakResult.streak > 0) {
+          const bonusResult = await awardStreakBonus(userId)
+          if (bonusResult.success && bonusResult.credits !== null && onCreditsUpdate) {
+            // Bonus was awarded, update credits display
+            onCreditsUpdate(bonusResult.credits)
+          }
+        }
+      }
       setShowCelebration(true)
       setTimeout(() => setShowCelebration(false), 3000)
+    } else if (!allCompleted && updatedGoals.length > 0) {
+      // Not all goals completed - reset streak to 0
+      const streakResult = await updateStreak(userId, false)
+      if (streakResult.success) {
+        setStreak(streakResult.streak)
+      }
     }
   }
 
@@ -168,11 +240,33 @@ export function DailyGoals({ userId }: DailyGoalsProps) {
         return
       }
 
-      const allCompleted = updatedGoals.every((goal) => goal.completed || goal.skipped)
+      // Check if all goals are completed (not skipped) and update streak
+      const allCompleted = updatedGoals.every((goal) => goal.completed && !goal.skipped)
       const anyCompleted = updatedGoals.some((goal) => goal.completed)
-      if (allCompleted && anyCompleted) {
+      
+      if (allCompleted && updatedGoals.length > 0) {
+        // All goals completed - update streak
+        const streakResult = await updateStreak(userId, true)
+        if (streakResult.success) {
+          setStreak(streakResult.streak)
+          
+          // Award streak bonus credit if user is on a streak
+          if (streakResult.streak > 0) {
+            const bonusResult = await awardStreakBonus(userId)
+            if (bonusResult.success && bonusResult.credits !== null && onCreditsUpdate) {
+              // Bonus was awarded, update credits display
+              onCreditsUpdate(bonusResult.credits)
+            }
+          }
+        }
         setShowCelebration(true)
         setTimeout(() => setShowCelebration(false), 3000)
+      } else if (!allCompleted && updatedGoals.length > 0) {
+        // Not all goals completed - reset streak to 0
+        const streakResult = await updateStreak(userId, false)
+        if (streakResult.success) {
+          setStreak(streakResult.streak)
+        }
       }
     }
   }
@@ -225,10 +319,19 @@ export function DailyGoals({ userId }: DailyGoalsProps) {
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-2xl font-bold text-[#185859]">Daily Goals</h2>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Day</span>
-            <div className="w-10 h-10 rounded-full bg-[#185859] flex items-center justify-center">
-              <span className="text-white font-bold">{currentDay}</span>
+          <div className="flex items-center gap-3">
+            {/* Streak Display */}
+            {streak > 0 && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-orange-500 to-red-500 shadow-md">
+                <Flame className="w-5 h-5 text-white" fill="white" />
+                <span className="text-white font-bold text-lg">{streak}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Day</span>
+              <div className="w-10 h-10 rounded-full bg-[#185859] flex items-center justify-center">
+                <span className="text-white font-bold">{currentDay}</span>
+              </div>
             </div>
           </div>
         </div>
