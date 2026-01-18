@@ -29,14 +29,17 @@ async function createAuthenticatedClient() {
   })
 }
 
-// Helper function to get today's date string (YYYY-MM-DD)
-// Uses midnight (12am) as the reset time
+// Helper function to get today's date string in EST (YYYY-MM-DD)
+// Uses midnight EST (UTC-5) as the reset time
 function getTodayDateString(): string {
-  const today = new Date()
-  // Get local date string (YYYY-MM-DD) - resets at midnight
-  const year = today.getFullYear()
-  const month = String(today.getMonth() + 1).padStart(2, '0')
-  const day = String(today.getDate()).padStart(2, '0')
+  const now = new Date()
+  // EST is UTC-5, so subtract 5 hours from current UTC time
+  const estTime = new Date(now.getTime() - 5 * 60 * 60 * 1000)
+  
+  // Use UTC methods on the adjusted time to get EST date components
+  const year = estTime.getUTCFullYear()
+  const month = String(estTime.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(estTime.getUTCDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 

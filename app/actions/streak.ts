@@ -30,22 +30,27 @@ async function createAuthenticatedClient() {
 }
 
 // ============================================
-// UTC Date Helpers
+// EST Date Helpers (UTC-5)
 // ============================================
 
-// Helper to get UTC date strings for today and yesterday
-function getUTCDateStrings() {
-  const today = new Date()
-  const todayYear = today.getUTCFullYear()
-  const todayMonth = String(today.getUTCMonth() + 1).padStart(2, '0')
-  const todayDay = String(today.getUTCDate()).padStart(2, '0')
+// Helper to get EST date strings for today and yesterday
+// Resets at midnight EST (5am UTC)
+function getESTDateStrings() {
+  const now = new Date()
+  // EST is UTC-5, so subtract 5 hours from current UTC time
+  const estTime = new Date(now.getTime() - 5 * 60 * 60 * 1000)
+  
+  // Use UTC methods on the adjusted time to get EST date components
+  const todayYear = estTime.getUTCFullYear()
+  const todayMonth = String(estTime.getUTCMonth() + 1).padStart(2, '0')
+  const todayDay = String(estTime.getUTCDate()).padStart(2, '0')
   const todayDateString = `${todayYear}-${todayMonth}-${todayDay}`
 
-  const yesterday = new Date(todayDateString + 'T00:00:00Z')
-  yesterday.setUTCDate(yesterday.getUTCDate() - 1)
-  const yesterdayYear = yesterday.getUTCFullYear()
-  const yesterdayMonth = String(yesterday.getUTCMonth() + 1).padStart(2, '0')
-  const yesterdayDay = String(yesterday.getUTCDate()).padStart(2, '0')
+  // Calculate yesterday in EST
+  const yesterdayEST = new Date(estTime.getTime() - 24 * 60 * 60 * 1000)
+  const yesterdayYear = yesterdayEST.getUTCFullYear()
+  const yesterdayMonth = String(yesterdayEST.getUTCMonth() + 1).padStart(2, '0')
+  const yesterdayDay = String(yesterdayEST.getUTCDate()).padStart(2, '0')
   const yesterdayDateString = `${yesterdayYear}-${yesterdayMonth}-${yesterdayDay}`
 
   return { todayDateString, yesterdayDateString }
@@ -66,7 +71,7 @@ function getUTCDateStrings() {
 export async function getStreak(userId: string) {
   try {
     const supabase = await createAuthenticatedClient()
-    const { todayDateString, yesterdayDateString } = getUTCDateStrings()
+    const { todayDateString, yesterdayDateString } = getESTDateStrings()
 
     const { data, error } = await supabase
       .from("profiles")
@@ -118,7 +123,7 @@ export async function getStreak(userId: string) {
 export async function updateStreak(userId: string, allGoalsCompleted: boolean) {
   try {
     const supabase = await createAuthenticatedClient()
-    const { todayDateString, yesterdayDateString } = getUTCDateStrings()
+    const { todayDateString, yesterdayDateString } = getESTDateStrings()
 
     // Get current streak data
     const { data: profile, error: fetchError } = await supabase
@@ -192,7 +197,7 @@ export async function updateStreak(userId: string, allGoalsCompleted: boolean) {
 export async function awardStreakBonus(userId: string) {
   try {
     const supabase = await createAuthenticatedClient()
-    const { todayDateString } = getUTCDateStrings()
+    const { todayDateString } = getESTDateStrings()
 
     // Get current profile data
     const { data: profile, error: fetchError } = await supabase
