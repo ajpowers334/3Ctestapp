@@ -50,7 +50,7 @@ export async function getGoals(userUuid: string) {
 
     const { data, error } = await supabase
       .from("goals")
-      .select("id, title, completed, skipped, skip_reason, type, label, completed_date")
+      .select("id, title, completed, skipped, skip_reason, completion_reflection, type, label, completed_date")
       .eq("uuid", userUuid)
       .order("created_at", { ascending: true })
     
@@ -73,6 +73,7 @@ export async function getGoals(userUuid: string) {
           completed: false,
           skipped: false,
           skip_reason: "",
+          completion_reflection: "",
           completed_date: null,
         }
       }
@@ -87,6 +88,7 @@ export async function getGoals(userUuid: string) {
           completed: false, 
           skipped: false, 
           skip_reason: "",
+          completion_reflection: "",
           completed_date: null 
         })
         .in("id", goalsToReset)
@@ -179,7 +181,7 @@ export async function getGoalById(goalId: string) {
   }
 }
 
-export async function updateGoalCompletion(goalId: string, completed: boolean) {
+export async function updateGoalCompletion(goalId: string, completed: boolean, completionReflection?: string) {
   try {
     const supabase = await createAuthenticatedClient()
     const today = getTodayDateString()
@@ -203,6 +205,7 @@ export async function updateGoalCompletion(goalId: string, completed: boolean) {
       .update({ 
         completed: completed,
         completed_date: newCompletedDate,
+        completion_reflection: completed ? (completionReflection || "") : "",
         skipped: false,
         skip_reason: "",
       })

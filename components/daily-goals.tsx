@@ -22,6 +22,7 @@ interface DailyGoal {
   completed: boolean
   skipped: boolean
   skipReason: string
+  completionReflection: string
   completedDate?: string | null
 }
 
@@ -60,6 +61,9 @@ export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
   const [showReasonForId, setShowReasonForId] = useState<string | null>(null)
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null)
   const [editText, setEditText] = useState("")
+  const [completingGoalId, setCompletingGoalId] = useState<string | null>(null)
+  const [completionReflectionInput, setCompletionReflectionInput] = useState("")
+  const [showReflectionForId, setShowReflectionForId] = useState<string | null>(null)
 
   useEffect(() => {
     const today = new Date()
@@ -97,6 +101,7 @@ export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
                 completed: createResult.data.completed,
                 skipped: createResult.data.skipped,
                 skipReason: createResult.data.skip_reason || "",
+                completionReflection: createResult.data.completion_reflection || "",
                 completedDate: createResult.data.completed_date || null,
               })
             }
@@ -112,6 +117,7 @@ export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
             completed: goal.completed,
             skipped: goal.skipped,
             skipReason: goal.skip_reason || "",
+            completionReflection: goal.completion_reflection || "",
             completedDate: goal.completed_date || null,
           }))
           setGoals(mappedGoals)
@@ -135,8 +141,14 @@ export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
     const goal = goals.find((g) => g.id === id)
     if (!goal) return
 
-    const newCompleted = !goal.completed
-    const wasCompleted = goal.completed
+    // If goal is not completed, trigger the completion flow with reflection input
+    if (!goal.completed) {
+      handleCompleteClick(id)
+      return
+    }
+
+    // If goal is already completed, allow uncompleting it
+    const newCompleted = false
 
     // Get today's date string (midnight reset)
     const today = new Date()
@@ -153,7 +165,8 @@ export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
             completed: newCompleted, 
             skipped: false, 
             skipReason: "",
-            completedDate: newCompleted ? todayDateString : (g.completedDate === todayDateString ? todayDateString : null),
+            completionReflection: "",
+            completedDate: g.completedDate === todayDateString ? todayDateString : null,
           } 
         : g,
     )
@@ -169,46 +182,106 @@ export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
       return
     }
 
-    // Add credits when a goal is completed (not when uncompleted)
-    // Only add credits if the goal wasn't already completed today (prevents double credits on recomplete)
-    // The updateGoalCompletion function now preserves completed_date when uncompleting if it was today
-    const creditsAlreadyAwarded = result.wasCompletedToday || false
-    if (newCompleted && !wasCompleted && !creditsAlreadyAwarded) {
-      const creditsResult = await addCredits(userId, 3)
-      if (creditsResult.success && onCreditsUpdate) {
-        onCreditsUpdate(creditsResult.credits)
-      }
-    }
-
     // Check if all goals are completed (not skipped) and update streak
     const allCompleted = updatedGoals.every((g) => g.completed && !g.skipped)
-    const anyCompleted = updatedGoals.some((g) => g.completed)
     
-    if (allCompleted && updatedGoals.length > 0) {
-      // All goals completed - update streak
-      const streakResult = await updateStreak(userId, true)
-      if (streakResult.success) {
-        setStreak(streakResult.streak)
-        
-        // Award streak bonus credit if user is on a streak
-        // Check if streak is > 0 (either was already on streak or just started)
-        if (streakResult.streak > 0) {
-          const bonusResult = await awardStreakBonus(userId)
-          if (bonusResult.success && bonusResult.credits !== null && onCreditsUpdate) {
-            // Bonus was awarded, update credits display
-            onCreditsUpdate(bonusResult.credits)
-          }
-        }
-      }
-      setShowCelebration(true)
-      setTimeout(() => setShowCelebration(false), 3000)
-    } else if (!allCompleted && updatedGoals.length > 0) {
+    if (!allCompleted && updatedGoals.length > 0) {
       // Not all goals completed - reset streak to 0
       const streakResult = await updateStreak(userId, false)
       if (streakResult.success) {
         setStreak(streakResult.streak)
       }
     }
+  }
+
+  const handleCompleteClick = (id: string) => {
+    setCompletingGoalId(id)
+    setCompletionReflectionInput("")
+  }
+
+  const handleCompleteSubmit = async (id: string) => {
+    if (completionReflectionInput.trim()) {
+      const reflection = completionReflectionInput.trim()
+
+      // Get today's date string (midnight reset)
+      const today = new Date()
+      const year = today.getFullYear()
+      const month = String(today.getMonth() + 1).padStart(2, '0')
+      const day = String(today.getDate()).padStart(2, '0')
+      const todayDateString = `${year}-${month}-${day}`
+      
+      // Optimistically update UI
+      const updatedGoals = goals.map((goal) =>
+        goal.id === id 
+          ? { 
+              ...goal, 
+              completed: true, 
+              completionReflection: reflection, 
+              skipped: false, 
+              skipReason: "",
+              completedDate: todayDateString,
+            } 
+          : goal,
+      )
+      setGoals(updatedGoals)
+      setCompletingGoalId(null)
+      setCompletionReflectionInput("")
+
+      // Update database
+      const result = await updateGoalCompletion(id, true, reflection)
+      
+      if (!result.success) {
+        // Revert on error
+        setGoals(goals)
+        setCompletingGoalId(id)
+        setCompletionReflectionInput(reflection)
+        alert("Error completing goal. Please try again.")
+        return
+      }
+
+      // Add credits when a goal is completed
+      // Only add credits if the goal wasn't already completed today (prevents double credits on recomplete)
+      const creditsAlreadyAwarded = result.wasCompletedToday || false
+      if (!creditsAlreadyAwarded) {
+        const creditsResult = await addCredits(userId, 3)
+        if (creditsResult.success && onCreditsUpdate) {
+          onCreditsUpdate(creditsResult.credits)
+        }
+      }
+
+      // Check if all goals are completed (not skipped) and update streak
+      const allCompleted = updatedGoals.every((g) => g.completed && !g.skipped)
+      
+      if (allCompleted && updatedGoals.length > 0) {
+        // All goals completed - update streak
+        const streakResult = await updateStreak(userId, true)
+        if (streakResult.success) {
+          setStreak(streakResult.streak)
+          
+          // Award streak bonus credit if user is on a streak
+          if (streakResult.streak > 0) {
+            const bonusResult = await awardStreakBonus(userId)
+            if (bonusResult.success && bonusResult.credits !== null && onCreditsUpdate) {
+              // Bonus was awarded, update credits display
+              onCreditsUpdate(bonusResult.credits)
+            }
+          }
+        }
+        setShowCelebration(true)
+        setTimeout(() => setShowCelebration(false), 3000)
+      } else if (!allCompleted && updatedGoals.length > 0) {
+        // Not all goals completed - reset streak to 0
+        const streakResult = await updateStreak(userId, false)
+        if (streakResult.success) {
+          setStreak(streakResult.streak)
+        }
+      }
+    }
+  }
+
+  const handleCancelComplete = () => {
+    setCompletingGoalId(null)
+    setCompletionReflectionInput("")
   }
 
   const handleSkipClick = (id: string) => {
@@ -449,12 +522,49 @@ export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
                   </div>
                 )}
 
+                {completingGoalId === goal.id && (
+                  <div className="mt-3 space-y-2 completion-reflection-input">
+                    <input
+                      type="text"
+                      value={completionReflectionInput}
+                      onChange={(e) => setCompletionReflectionInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && completionReflectionInput.trim()) handleCompleteSubmit(goal.id)
+                        if (e.key === "Escape") handleCancelComplete()
+                      }}
+                      placeholder="Write a short reflection on how you completed this goal..."
+                      className="w-full px-3 py-2 border-2 border-[#185859] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#185859]/50"
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => handleCompleteSubmit(goal.id)}
+                        disabled={!completionReflectionInput.trim()}
+                        className="bg-[#185859] hover:bg-[#185859]/90 text-white"
+                      >
+                        Submit
+                      </Button>
+                      <Button
+                        onClick={handleCancelComplete}
+                        variant="outline"
+                        className="border-gray-300 hover:bg-gray-100 bg-transparent"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {skippingGoalId === goal.id && (
                   <div className="mt-3 space-y-2 skip-reason-input">
                     <input
                       type="text"
                       value={skipReasonInput}
                       onChange={(e) => setSkipReasonInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && skipReasonInput.trim()) handleSkipSubmit(goal.id)
+                        if (e.key === "Escape") handleCancelSkip()
+                      }}
                       placeholder="Why are you skipping this goal?"
                       className="w-full px-3 py-2 border-2 border-[#185859] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#185859]/50"
                       autoFocus
@@ -487,8 +597,24 @@ export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
                   </div>
                 )}
 
-                {!goal.completed && !goal.skipped && skippingGoalId !== goal.id && editingGoalId !== goal.id && (
-                  <div className="mt-3">
+                {goal.completed && showReflectionForId === goal.id && goal.completionReflection && (
+                  <div className="mt-3 p-3 bg-[#185859]/10 rounded-lg completion-reflection-display">
+                    <p className="text-sm text-gray-700">
+                      <span className="font-semibold">Reflection: </span>
+                      {goal.completionReflection}
+                    </p>
+                  </div>
+                )}
+
+                {!goal.completed && !goal.skipped && skippingGoalId !== goal.id && completingGoalId !== goal.id && editingGoalId !== goal.id && (
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      onClick={() => handleCompleteClick(goal.id)}
+                      size="sm"
+                      className="bg-[#185859] hover:bg-[#185859]/90 text-white"
+                    >
+                      Complete
+                    </Button>
                     <Button
                       onClick={() => handleSkipClick(goal.id)}
                       variant="outline"
@@ -509,6 +635,19 @@ export function DailyGoals({ userId, onCreditsUpdate }: DailyGoalsProps) {
                       className="text-[#185859] border-[#185859] hover:bg-[#185859]/10"
                     >
                       {showReasonForId === goal.id ? "Hide Reason" : "Show Reason"}
+                    </Button>
+                  </div>
+                )}
+
+                {goal.completed && goal.completionReflection && (
+                  <div className="mt-3">
+                    <Button
+                      onClick={() => setShowReflectionForId(showReflectionForId === goal.id ? null : goal.id)}
+                      variant="outline"
+                      size="sm"
+                      className="text-[#185859] border-[#185859] hover:bg-[#185859]/10"
+                    >
+                      {showReflectionForId === goal.id ? "Hide Reflection" : "Show Reflection"}
                     </Button>
                   </div>
                 )}

@@ -246,18 +246,22 @@ export function StoreContent({ userId, initialCredits }: StoreContentProps) {
                 </div>
                 <Button
                   onClick={() => handlePurchase(item.name, item.cost)}
-                  disabled={!canAfford || isProcessing}
+                  disabled={!canAfford || isProcessing || item.name === "Candy" || item.name === "Toy"}
                   className={`w-full ${
-                    canAfford && !isProcessing
-                      ? "bg-[#185859] hover:bg-[#185859]/90 text-white"
-                      : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    item.name === "Candy" || item.name === "Toy"
+                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      : canAfford && !isProcessing
+                        ? "bg-[#185859] hover:bg-[#185859]/90 text-white"
+                        : "bg-gray-300 text-gray-500 cursor-not-allowed"
                   }`}
                 >
-                  {isProcessing
-                    ? "Processing..."
-                    : canAfford
-                      ? "Purchase"
-                      : "Not Enough Credits"}
+                  {item.name === "Candy" || item.name === "Toy"
+                    ? "Coming Soon"
+                    : isProcessing
+                      ? "Processing..."
+                      : canAfford
+                        ? "Purchase"
+                        : "Not Enough Credits"}
                 </Button>
               </Card>
             )
