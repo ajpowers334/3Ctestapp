@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { getCredits } from "@/app/actions/credits"
+import { getStoreItems } from "@/app/actions/store"
 import { StoreContent } from "@/components/store-content"
 import { ensureProfileExists } from "@/app/actions/profile"
 
@@ -25,5 +26,9 @@ export default async function StorePage() {
   const creditsResult = await getCredits(user.id)
   const initialCredits = creditsResult.success ? creditsResult.credits : 0
 
-  return <StoreContent userId={user.id} initialCredits={initialCredits} />
+  // Fetch store items from database
+  const itemsResult = await getStoreItems()
+  const initialItems = itemsResult.success ? itemsResult.items : []
+
+  return <StoreContent userId={user.id} initialCredits={initialCredits} initialItems={initialItems} />
 }

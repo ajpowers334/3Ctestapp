@@ -4,16 +4,37 @@ import { useState, useEffect, useRef } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Candy, Gift, CreditCard, Coins, Home, CheckCircle2 } from "lucide-react"
+import { Candy, Gift, CreditCard, Coins, Home, CheckCircle2, Package, type LucideIcon } from "lucide-react"
 import { getCredits } from "@/app/actions/credits"
-import { createCheckoutSession, expireCheckoutSession } from "@/app/actions/store"
+import { createCheckoutSession, expireCheckoutSession, getCheckoutSessionStatus, type StoreItem } from "@/app/actions/store"
 import { QRCodeSVG } from "qrcode.react"
 import { supabase } from "@/lib/supabaseClient"
 import Link from "next/link"
 
+// Icon mapping - maps item names to Lucide icons
+// Add more mappings here as you add new items to the store
+const iconMap: Record<string, LucideIcon> = {
+  "Candy": Candy,
+  "Toy": Gift,
+  "Gift Card": CreditCard,
+}
+
+// Color mapping - maps item names to Tailwind gradient classes
+// Add more mappings here as you add new items to the store
+const colorMap: Record<string, string> = {
+  "Candy": "from-pink-500 to-rose-500",
+  "Toy": "from-blue-500 to-cyan-500",
+  "Gift Card": "from-purple-500 to-indigo-500",
+}
+
+// Default values for items not in the mappings
+const defaultIcon = Package
+const defaultColor = "from-gray-500 to-gray-600"
+
 interface StoreContentProps {
   userId: string
   initialCredits: number
+  initialItems: StoreItem[]
 }
 
 interface CheckoutData {
@@ -23,7 +44,7 @@ interface CheckoutData {
   cost: number
 }
 
-export function StoreContent({ userId, initialCredits }: StoreContentProps) {
+export function StoreContent({ userId, initialCredits, initialItems }: StoreContentProps) {
   const [credits, setCredits] = useState(initialCredits)
   const [isProcessing, setIsProcessing] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
@@ -48,21 +69,17 @@ export function StoreContent({ userId, initialCredits }: StoreContentProps) {
       return
     }
 
-    // Check initial status when dialog opens
+    // Check initial status when dialog opens (using server action)
     const checkInitialStatus = async () => {
-      const { data, error } = await supabase
-        .from("checkout_sessions")
-        .select("status")
-        .eq("id", checkoutData.sessionId)
-        .single()
+      const result = await getCheckoutSessionStatus(checkoutData.sessionId)
       
-      if (!error && data) {
-        setSessionStatus(data.status as "pending" | "completed" | "expired")
-        if (data.status === "completed") {
+      if (result.success && result.status) {
+        setSessionStatus(result.status)
+        if (result.status === "completed") {
           // Refresh credits if already completed
-          const result = await getCredits(userId)
-          if (result.success) {
-            setCredits(result.credits)
+          const creditsResult = await getCredits(userId)
+          if (creditsResult.success) {
+            setCredits(creditsResult.credits)
           }
         }
       } else {
@@ -156,30 +173,6 @@ export function StoreContent({ userId, initialCredits }: StoreContentProps) {
     }
   }
 
-  const storeItems = [
-    {
-      name: "Candy",
-      cost: 5,
-      icon: Candy,
-      description: "Sweet treats to enjoy",
-      color: "from-pink-500 to-rose-500",
-    },
-    {
-      name: "Toy",
-      cost: 25,
-      icon: Gift,
-      description: "Fun toy for playtime",
-      color: "from-blue-500 to-cyan-500",
-    },
-    {
-      name: "Gift Card",
-      cost: 50,
-      icon: CreditCard,
-      description: "Gift card for shopping",
-      color: "from-purple-500 to-indigo-500",
-    },
-  ]
-
   return (
     <main className="min-h-screen bg-background py-12">
       <div className="container mx-auto px-4">
@@ -222,50 +215,54 @@ export function StoreContent({ userId, initialCredits }: StoreContentProps) {
 
         {/* Store Items Grid */}
         <div className="grid gap-8 md:grid-cols-3 max-w-5xl mx-auto">
-          {storeItems.map((item) => {
-            const Icon = item.icon
-            const canAfford = credits >= item.cost
+          {initialItems.length === 0 ? (
+            <div className="col-span-3 text-center py-12">
+              <Package className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No items available in the store right now.</p>
+            </div>
+          ) : (
+            initialItems.map((item) => {
+              const Icon = iconMap[item.name] || defaultIcon
+              const color = colorMap[item.name] || defaultColor
+              const canAfford = credits >= item.value
 
-            return (
-              <Card
-                key={item.name}
-                className="p-6 flex flex-col items-center text-center space-y-4 hover:shadow-xl transition-shadow"
-              >
-                <div
-                  className={`w-20 h-20 rounded-full bg-gradient-to-br ${item.color} flex items-center justify-center`}
+              return (
+                <Card
+                  key={item.id}
+                  className="p-6 flex flex-col items-center text-center space-y-4 hover:shadow-xl transition-shadow"
                 >
-                  <Icon className="w-10 h-10 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-foreground mb-1">{item.name}</h3>
-                  <p className="text-sm text-muted-foreground">{item.description}</p>
-                </div>
-                <div className="flex items-center gap-2 text-[#185859]">
-                  <Coins className="w-5 h-5" />
-                  <span className="text-2xl font-bold">{item.cost}</span>
-                </div>
-                <Button
-                  onClick={() => handlePurchase(item.name, item.cost)}
-                  disabled={!canAfford || isProcessing || item.name === "Candy" || item.name === "Toy"}
-                  className={`w-full ${
-                    item.name === "Candy" || item.name === "Toy"
-                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                      : canAfford && !isProcessing
+                  <div
+                    className={`w-20 h-20 rounded-full bg-gradient-to-br ${color} flex items-center justify-center`}
+                  >
+                    <Icon className="w-10 h-10 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-foreground mb-1">{item.name}</h3>
+                    <p className="text-sm text-muted-foreground">{item.stock} in stock</p>
+                  </div>
+                  <div className="flex items-center gap-2 text-[#185859]">
+                    <Coins className="w-5 h-5" />
+                    <span className="text-2xl font-bold">{item.value}</span>
+                  </div>
+                  <Button
+                    onClick={() => handlePurchase(item.name, item.value)}
+                    disabled={!canAfford || isProcessing}
+                    className={`w-full ${
+                      canAfford && !isProcessing
                         ? "bg-[#185859] hover:bg-[#185859]/90 text-white"
                         : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  }`}
-                >
-                  {item.name === "Candy" || item.name === "Toy"
-                    ? "Coming Soon"
-                    : isProcessing
+                    }`}
+                  >
+                    {isProcessing
                       ? "Processing..."
                       : canAfford
                         ? "Purchase"
                         : "Not Enough Credits"}
-                </Button>
-              </Card>
-            )
-          })}
+                  </Button>
+                </Card>
+              )
+            })
+          )}
         </div>
       </div>
 

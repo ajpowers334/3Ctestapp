@@ -115,7 +115,7 @@ export function AuthenticatedView({ hasType, userId }: AuthenticatedViewProps) {
           {userType && (
             <div className="max-w-2xl mx-auto text-center">
               <p className="text-2xl md:text-3xl font-semibold text-[#185859]">
-                I am <span className="capitalize">{userType.replace(/-/g, " ")}</span>
+                I am {userType === "leader" ? "a " : ""}<span className="capitalize">{userType.replace(/-/g, " ")}</span>
               </p>
             </div>
           )}

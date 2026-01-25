@@ -438,34 +438,98 @@ export async function completeCheckoutSession(token: string) {
   }
 }
 
-// Check if user is admin -- dont need this, double check to make sure
-export async function isAdmin(userId: string) {
+// Get checkout session status
+// This allows the client to check the current status of a checkout session
+export async function getCheckoutSessionStatus(sessionId: string) {
   try {
     const supabase = await createAuthenticatedClient()
     
+    // Get authenticated user to verify ownership
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return {
+        success: false,
+        error: "Authentication required",
+        status: null,
+      }
+    }
+
     const { data, error } = await supabase
-      .from("profiles")
-      .select("is_admin")
-      .eq("id", userId)
+      .from("checkout_sessions")
+      .select("status, user_id")
+      .eq("id", sessionId)
       .single()
     
     if (error) {
       return {
         success: false,
         error: error.message,
-        isAdmin: false,
+        status: null,
+      }
+    }
+
+    // Verify the session belongs to the authenticated user
+    if (data.user_id !== user.id) {
+      return {
+        success: false,
+        error: "Unauthorized: Session does not belong to you",
+        status: null,
       }
     }
     
     return {
       success: true,
-      isAdmin: data?.is_admin === true,
+      status: data.status as "pending" | "completed" | "expired",
     }
   } catch (error) {
     return {
       success: false,
       error: error instanceof Error ? error.message : "An unknown error occurred",
-      isAdmin: false,
+      status: null,
+    }
+  }
+}
+
+// Store item type matching the Supabase "store" table
+export interface StoreItem {
+  id: string
+  name: string
+  available: boolean
+  stock: number
+  value: number
+  created_at: string
+}
+
+// Fetch all available store items from the database
+export async function getStoreItems() {
+  try {
+    const supabase = await createAuthenticatedClient()
+    
+    const { data, error } = await supabase
+      .from("store")
+      .select("id, name, available, stock, value, created_at")
+      .eq("available", true)
+      .gt("stock", 0)
+      .order("created_at", { ascending: true })
+    
+    if (error) {
+      return {
+        success: false,
+        error: error.message,
+        items: [] as StoreItem[],
+      }
+    }
+    
+    return {
+      success: true,
+      items: data as StoreItem[],
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+      items: [] as StoreItem[],
     }
   }
 }
